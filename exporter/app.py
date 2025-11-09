@@ -14,34 +14,61 @@ LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(level=getattr(logging, LOG_LEVEL, logging.INFO),
                     format="%(asctime)s [%(levelname)s] %(message)s")
 
-# Convert letter grades to numeric (for alerting)
-# NOTE: includes B+ and updated numbering
+# Convert letter grades to numeric
 GRADE_MAP = {"A+": 1, "A": 2, "B": 3, "B+": 4, "C": 5, "D": 6, "F": 7}
 
+URL_RE = re.compile(r"^https?://", re.IGNORECASE)
+
+def _clean_lines(raw: str):
+    """
+    Yield cleaned lines from a raw block (ENV or file):
+    - strip whitespace & quotes
+    - drop empty, '-' lines, and comments (# ...)
+    """
+    for ln in raw.splitlines():
+        ln = ln.strip().strip("'").strip('"')
+        if not ln:
+            continue
+        if ln == "-":
+            continue
+        if ln.startswith("#"):
+            continue
+        yield ln
 
 def get_target_urls():
     """
-    Accept TARGET_URLS separated by commas and/or newlines.
-    Also supports TARGET_URLS_FILE (one URL per line).
+    Accept TARGET_URLS (commas or newlines) and/or TARGET_URLS_FILE (one URL per line).
+    Drop invalid entries and log them.
     """
     urls = []
+
+    # From file
     path = os.getenv("TARGET_URLS_FILE")
     if path and os.path.exists(path):
         with open(path, "r") as f:
-            urls += [ln.strip() for ln in f if ln.strip()]
+            for ln in _clean_lines(f.read()):
+                urls.append(ln)
+
+    # From env (split on commas first; then split each chunk by lines)
     raw = os.getenv("TARGET_URLS", "")
-    # Split on commas or any whitespace (spaces, newlines, tabs)
-    for u in re.split(r"[,\s]+", raw.strip()):
-        if u:
-            urls.append(u)
-    # Deduplicate while preserving order
+    if raw:
+        for chunk in raw.split(","):
+            for ln in _clean_lines(chunk):
+                urls.append(ln)
+
+    # Dedup while preserving order, and validate schema
     seen = set()
-    out = []
+    valid = []
     for u in urls:
-        if u not in seen:
-            seen.add(u)
-            out.append(u)
-    return out
+        if u in seen:
+            continue
+        seen.add(u)
+        if URL_RE.match(u):
+            valid.append(u)
+        else:
+            logging.warning("Dropped TARGET_URLS entry (not a URL): %r", u)
+
+    return valid
 
 
 def parse_labels(url: str):
@@ -101,8 +128,8 @@ def metrics():
             # If grade not in allowed list, skip + log warning
             if grade_letter not in GRADE_MAP:
                 logging.warning(
-                    "Dropped validator %s on %s: unrecognized grade '%s'",
-                    validator, network, grade_letter
+                    "Dropped validator %s on %s: unrecognized grade %r (url=%s)",
+                    validator, network, grade_letter, url
                 )
                 continue
 
@@ -135,7 +162,7 @@ def metrics():
             emitted_any = True
 
         except Exception as e:
-            logging.error("Error fetching validator %s on %s: %s", validator, network, e)
+            logging.error("Error fetching validator %s on %s (url=%s): %s", validator, network, url, e)
 
         if emitted_any:
             lines.append(f'polka_exporter_up{{validator="{validator}",network="{network}",name="{name_label}"}} 1')

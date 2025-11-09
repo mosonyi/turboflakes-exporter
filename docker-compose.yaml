@@ -1,6 +1,6 @@
 services:
   turboflakes-exporter:
-    image: mosonyi/turboflakes-exporter:v1.1
+    image: mosonyi/turboflakes-exporter:v1.2
     ports:
       - "9101:9101"                     # Polkadot metrics
     environment:
