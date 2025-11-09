@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   turboflakes-exporter:
     image: mosonyi/turboflakes-exporter:v1.0

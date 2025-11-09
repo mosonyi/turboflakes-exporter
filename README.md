@@ -74,16 +74,16 @@ scrape_configs:
 
 ```yaml
 groups:
-- name: validators
-  rules:
-  - alert: ValidatorDegraded
-    expr: polka_validator_grade > 1
-    for: 10m
-    labels:
-      severity: warning
-    annotations:
-      summary: "Validator degraded: {{ $labels.network }} / {{ $labels.name }}"
-      description: "Grade numeric={{ $value }} (1=A+). Stash={{ $labels.validator }}."
+  - name: validators
+    rules:
+      - alert: ValidatorDegraded
+        expr: polka_validator_grade_value > 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Validator degraded: {{ $labels.network }} / {{ $labels.name }}"
+          description: "Grade dropped to {{ $labels.grade }} (numeric={{ $value }})"
 ```
 
 ---
@@ -119,6 +119,7 @@ receivers:
           • *{{ .Annotations.summary }}*
             Network: {{ .Labels.network }}
             Validator: {{ .Labels.name }} ({{ .Labels.validator }})
+            Grade: {{ .Labels.grade }}
           {{ end }}
 ```
 
