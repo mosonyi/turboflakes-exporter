@@ -1,0 +1,19 @@
+version: "3.9"
+
+services:
+  turboflakes-exporter:
+    image: mosonyi/turboflakes-exporter:v1.0
+    ports:
+      - "9101:9101"                     # Polkadot metrics
+    environment:
+      TARGET_URLS: |
+        https://polkadot-onet-api.turboflakes.io/api/v1/validators/1123RekaPHgWaPL5v9qfsikRemeZdYC4tvKXYuLXwhfT3NKy/grade
+        https://polkadot-onet-api.turboflakes.io/api/v1/validators/15vthsDeqGnawu8L9Cz3RheobRFZyzgbB59MpFFVFurW4AP9/grade
+        https://kusama-onet-api.turboflakes.io/api/v1/validators/FJgeBDUj4gF2rYxLmxc7QcccEMZQ26xudp4sro3HFMGZMRL/grade
+        https://kusama-onet-api.turboflakes.io/api/v1/validators/F5RTgwqTgKHPTcVk1eiAwXYtx3BWo9r6iAmhsjH9RRn62jb/grade
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9101/metrics"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
