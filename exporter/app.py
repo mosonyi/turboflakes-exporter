@@ -9,7 +9,7 @@ session = requests.Session()
 session.headers.update({"User-Agent": "turboflakes-exporter/1.0"})
 
 # Convert letter grades to numeric (for alerting)
-GRADE_MAP = {"A+": 1, "A": 2, "B": 3, "C": 4, "D": 5, "F": 6}
+GRADE_MAP = {"A+": 1, "A": 2, "B": 3, "B+": 4, "C": 5, "D": 6, "F": 7}
 
 
 def get_target_urls():
@@ -59,6 +59,11 @@ def build_profile_url(network: str, validator: str) -> str:
     return f"https://{network}-onet-api.turboflakes.io/api/v1/validators/{validator}/profile"
 
 
+@app.route("/health")
+def health():
+    return Response("ok\n", mimetype="text/plain")
+
+
 @app.route("/metrics")
 def metrics():
     urls = get_target_urls()
@@ -77,16 +82,21 @@ def metrics():
     for url in urls:
         validator, network = parse_labels(url)
         name_label = validator
-        up = 0
+        emitted_any = False  # track if we emitted metrics for this validator
 
         try:
             # 1️⃣ Grade JSON
             gj = session.get(url, timeout=10)
             gj.raise_for_status()
             gj = gj.json()
-            grade_letter = (gj.get("grade") or "F").strip()
+            grade_letter = (gj.get("grade") or "").strip()
+
+            # ⛔ Skip if grade not recognized
+            if grade_letter not in GRADE_MAP:
+                continue
+
             missed = gj.get("missed_votes_total", 0)
-            grade_value = GRADE_MAP.get(grade_letter, 9)
+            grade_value = GRADE_MAP[grade_letter]
 
             # 2️⃣ Profile JSON (best-effort)
             try:
@@ -94,7 +104,18 @@ def metrics():
                 pj.raise_for_status()
                 pj = pj.json()
                 identity = pj.get("identity") or {}
-                name_label = identity.get("name") or identity.get("sub") or pj.get("stash") or validator
+                name = identity.get("name")
+                sub = identity.get("sub")
+
+                # Combine name/sub if both exist
+                if name and sub:
+                    name_label = f"{name}/{sub}"
+                elif name:
+                    name_label = name
+                elif sub:
+                    name_label = sub
+                else:
+                    name_label = pj.get("stash") or validator
             except Exception:
                 pass
 
@@ -102,12 +123,14 @@ def metrics():
             base = f'validator="{validator}",network="{network}",name="{name_label}",grade="{grade_letter}"'
             lines.append(f'polka_validator_grade_value{{{base}}} {grade_value}')
             lines.append(f'polka_validator_missed_votes_total{{validator="{validator}",network="{network}",name="{name_label}"}} {missed}')
-            up = 1
+            emitted_any = True
 
         except Exception:
             pass
 
-        lines.append(f'polka_exporter_up{{validator="{validator}",network="{network}",name="{name_label}"}} {up}')
+        # Emit 'up' only if we emitted valid metrics for this validator
+        if emitted_any:
+            lines.append(f'polka_exporter_up{{validator="{validator}",network="{network}",name="{name_label}"}} 1')
 
     return Response("\n".join(lines) + "\n", mimetype="text/plain")
 

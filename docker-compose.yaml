@@ -1,6 +1,6 @@
 services:
   turboflakes-exporter:
-    image: mosonyi/turboflakes-exporter:v1.0
+    image: mosonyi/turboflakes-exporter:v1.1
     ports:
       - "9101:9101"                     # Polkadot metrics
     environment:
@@ -11,7 +11,7 @@ services:
         https://kusama-onet-api.turboflakes.io/api/v1/validators/F5RTgwqTgKHPTcVk1eiAwXYtx3BWo9r6iAmhsjH9RRn62jb/grade
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:9101/metrics"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:9101/health"]
       interval: 30s
       timeout: 5s
       retries: 3
