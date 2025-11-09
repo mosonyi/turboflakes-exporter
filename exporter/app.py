@@ -1,14 +1,21 @@
 import os
 import re
+import logging
 import requests
 from urllib.parse import urlparse
 from flask import Flask, Response
 
 app = Flask(__name__)
 session = requests.Session()
-session.headers.update({"User-Agent": "turboflakes-exporter/1.0"})
+session.headers.update({"User-Agent": "turboflakes-exporter/1.1"})
+
+# Logging
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(level=getattr(logging, LOG_LEVEL, logging.INFO),
+                    format="%(asctime)s [%(levelname)s] %(message)s")
 
 # Convert letter grades to numeric (for alerting)
+# NOTE: includes B+ and updated numbering
 GRADE_MAP = {"A+": 1, "A": 2, "B": 3, "B+": 4, "C": 5, "D": 6, "F": 7}
 
 
@@ -72,7 +79,7 @@ def metrics():
 
     lines = []
     # Metric headers
-    lines.append("# HELP polka_validator_grade_value Validator grade numeric (1=A+,2=A,3=B,4=C,5=D,6=F) with grade label")
+    lines.append("# HELP polka_validator_grade_value Validator grade numeric (1=A+,2=A,3=B,4=B+,5=C,6=D,7=F) with grade label")
     lines.append("# TYPE polka_validator_grade_value gauge")
     lines.append("# HELP polka_validator_missed_votes_total Missed votes total")
     lines.append("# TYPE polka_validator_missed_votes_total gauge")
@@ -82,53 +89,54 @@ def metrics():
     for url in urls:
         validator, network = parse_labels(url)
         name_label = validator
-        emitted_any = False  # track if we emitted metrics for this validator
+        emitted_any = False
 
         try:
-            # 1️⃣ Grade JSON
+            # 1) Grade JSON
             gj = session.get(url, timeout=10)
             gj.raise_for_status()
             gj = gj.json()
             grade_letter = (gj.get("grade") or "").strip()
 
-            # ⛔ Skip if grade not recognized
+            # If grade not in allowed list, skip + log warning
             if grade_letter not in GRADE_MAP:
+                logging.warning(
+                    "Dropped validator %s on %s: unrecognized grade '%s'",
+                    validator, network, grade_letter
+                )
                 continue
 
             missed = gj.get("missed_votes_total", 0)
             grade_value = GRADE_MAP[grade_letter]
 
-            # 2️⃣ Profile JSON (best-effort)
+            # 2) Profile JSON (best-effort)
             try:
                 pj = session.get(build_profile_url(network, validator), timeout=10)
                 pj.raise_for_status()
                 pj = pj.json()
                 identity = pj.get("identity") or {}
-                name = identity.get("name")
-                sub = identity.get("sub")
-
-                # Combine name/sub if both exist
-                if name and sub:
-                    name_label = f"{name}/{sub}"
-                elif name:
-                    name_label = name
-                elif sub:
-                    name_label = sub
+                name_part = identity.get("name")
+                sub_part = identity.get("sub")
+                if name_part and sub_part:
+                    name_label = f"{name_part}/{sub_part}"
+                elif name_part:
+                    name_label = name_part
+                elif sub_part:
+                    name_label = sub_part
                 else:
                     name_label = pj.get("stash") or validator
-            except Exception:
-                pass
+            except Exception as e:
+                logging.debug("Profile fetch failed for %s on %s: %s", validator, network, e)
 
-            # 3️⃣ Emit metrics
+            # 3) Emit metrics
             base = f'validator="{validator}",network="{network}",name="{name_label}",grade="{grade_letter}"'
             lines.append(f'polka_validator_grade_value{{{base}}} {grade_value}')
             lines.append(f'polka_validator_missed_votes_total{{validator="{validator}",network="{network}",name="{name_label}"}} {missed}')
             emitted_any = True
 
-        except Exception:
-            pass
+        except Exception as e:
+            logging.error("Error fetching validator %s on %s: %s", validator, network, e)
 
-        # Emit 'up' only if we emitted valid metrics for this validator
         if emitted_any:
             lines.append(f'polka_exporter_up{{validator="{validator}",network="{network}",name="{name_label}"}} 1')
 
@@ -136,4 +144,5 @@ def metrics():
 
 
 if __name__ == "__main__":
+    logging.info("Starting Turboflakes exporter on port 9101 ...")
     app.run(host="0.0.0.0", port=9101)
