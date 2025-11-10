@@ -45,8 +45,8 @@ TARGET_URLS: |
 ## 🐳 Build & Run
 
 ```bash
-docker build -t mosonyi/turboflakes-exporter:v1.0 .
-docker run  --name turboflakes-exporter   -p 9201:9101   -e TARGET_URLS="https://polkadot-onet-api.turboflakes.io/api/v1/validators/1123RekaPHgWaPL5v9qfsikRemeZdYC4tvKXYuLXwhfT3NKy/grade,https://kusama-onet-api.turboflakes.io/api/v1/validators/FJgeBDUj4gF2rYxLmxc7QcccEMZQ26xudp4sro3HFMGZMRL/grade"  mosonyi/turboflakes-exporter:v1.0
+docker build -t turboflakes-exporter:local .
+docker run  --name turboflakes-exporter   -p 9201:9101   -e TARGET_URLS="https://polkadot-onet-api.turboflakes.io/api/v1/validators/1123RekaPHgWaPL5v9qfsikRemeZdYC4tvKXYuLXwhfT3NKy/grade,https://kusama-onet-api.turboflakes.io/api/v1/validators/FJgeBDUj4gF2rYxLmxc7QcccEMZQ26xudp4sro3HFMGZMRL/grade"  turboflakes-exporter:local
 
 ```
 ## 🐳 Run with docker compose
